@@ -1,0 +1,26 @@
+# Test config loading
+go run cmd/main.go config
+
+# Test environment validation  
+go run cmd/main.go env validate
+
+# Test with verbose mode
+VERBOSE=true go run cmd/main.go config
+
+================================================================================
+# Test different log levels
+LOG_LEVEL=DEBUG go run cmd/main.go --verbose
+
+# Test with JSON logging
+LOG_FILE=./logs/app.json go run cmd/main.go
+
+# Test step logging
+DEBUG_MODE=true go run cmd/main.go --debug
+================================================================================
+# Validate YAML syntax
+go install github.com/mikefarah/yq/v4@latest
+yq . configs/properties.yaml
+yq . configs/cli-config.yaml
+yq . configs/display-config.yaml
+yq . configs/mcp-servers.yaml
+================================================================================

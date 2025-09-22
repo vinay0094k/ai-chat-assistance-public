@@ -1,0 +1,58 @@
+system:
+    version: 1.0.0-test
+    name: Modified Test Config
+    session_timeout: 1h
+    auto_save_config: true
+    data_directory: /tmp/test-data
+ai:
+    providers:
+        - name: openai
+          model: gpt-4
+          weight: 1
+          timeout: 30s
+          max_tokens: 4096
+          temperature: 0.7
+          stream: true
+          enabled: true
+          cost_per_1k_input: 0.03
+          cost_per_1k_output: 0.06
+    fallback: null
+indexing:
+    languages:
+        - go
+        - python
+        - javascript
+    file_extensions:
+        - .go
+        - .py
+        - .js
+        - .ts
+    ignore_patterns:
+        - vendor/
+        - node_modules/
+        - .git/
+    chunk_size: 1000
+    overlap: 100
+    batch_size: 50
+    max_file_size: ""
+    max_files: 0
+    incremental: false
+    real_time: false
+    debounce_delay: ""
+    max_workers: 4
+    worker_queue_size: 0
+vectordb: null
+database: null
+mcp: null
+search:
+    max_results: 20
+    min_confidence: 0.5
+    semantic_weight: 0.6
+    keyword_weight: 0.2
+    graph_weight: 0.2
+    context_expansion: 0
+    enable_fuzzy: false
+    fuzzy_threshold: 0
+learning: null
+performance: null
+security: null

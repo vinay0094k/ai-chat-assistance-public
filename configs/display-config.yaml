@@ -1,0 +1,184 @@
+# Display and streaming configuration
+
+display:
+  # Real-time Streaming
+  streaming:
+    enabled: true
+    character_delay: 10    # ms between characters
+    line_delay: 50         # ms between lines
+    important_line_emphasis: true
+    
+    # Streaming modes
+    modes:
+      instant: 0           # No delay
+      fast: 25            # Fast streaming
+      normal: 50          # Normal speed
+      slow: 100           # Slow for dramatic effect
+      
+    # Context-aware streaming
+    adaptive_speed: true
+    speed_by_content:
+      code: "fast"
+      explanation: "normal"
+      error: "instant"
+      
+  # Line Numbering
+  line_numbers:
+    enabled: true
+    width: 4
+    style: "aligned"      # aligned, padded, minimal
+    color: "blue"
+    separator: " │ "
+    
+  # Progress Indicators
+  progress:
+    bar_style: "blocks"   # blocks, dots, arrow, unicode
+    bar_width: 50
+    show_percentage: true
+    show_eta: true
+    show_speed: true
+    
+    # Progress themes
+    themes:
+      default:
+        complete: "█"
+        incomplete: "░"
+        
+      minimal:
+        complete: "="
+        incomplete: "-"
+        
+      unicode:
+        complete: "▓"
+        incomplete: "▒"
+
+  # Code Highlighting
+  syntax:
+    enabled: true
+    theme: "github-dark"
+    
+    # Language-specific settings
+    languages:
+      go:
+        enabled: true
+        keywords: ["func", "var", "const", "if", "else", "for", "range", "return", "package", "import", "type", "struct", "interface"]
+        types: ["string", "int", "int64", "float64", "bool", "error", "byte", "rune"]
+        
+      python:
+        enabled: true
+        keywords: ["def", "class", "if", "else", "for", "while", "return", "import", "from", "as", "try", "except"]
+        types: ["str", "int", "float", "bool", "list", "dict", "tuple", "set"]
+        
+      javascript:
+        enabled: true
+        keywords: ["function", "var", "let", "const", "if", "else", "for", "while", "return", "import", "export"]
+        types: ["string", "number", "boolean", "object", "array", "null", "undefined"]
+
+  # Visual Effects
+  effects:
+    # Typewriter effect for important content
+    typewriter:
+      enabled: true
+      speed: 50
+      trigger_keywords: ["important", "error", "warning", "critical"]
+      
+    # Highlighting for key information
+    highlight:
+      enabled: true
+      flash_duration: 200
+      flash_color: "yellow"
+      
+    # Animation for loading states
+    animations:
+      enabled: true
+      loading_spinner: "dots"  # dots, line, bounce, pulse
+      
+  # Layout and Spacing
+  layout:
+    max_width: 120
+    indent_size: 2
+    
+    # Margins and padding
+    margins:
+      top: 1
+      bottom: 1
+      left: 0
+      right: 0
+      
+    # Section separators
+    separators:
+      style: "line"        # line, dots, equals, custom
+      character: "─"
+      length: 80
+
+  # Error Display
+  errors:
+    show_stack_trace: false
+    highlight_error_line: true
+    error_context_lines: 3
+    
+    # Error formatting
+    format:
+      prefix: "❌"
+      color: "red"
+      bold: true
+
+  # Success Display
+  success:
+    show_checkmark: true
+    format:
+      prefix: "✅"
+      color: "green"
+      bold: false
+
+  # Information Display
+  info:
+    format:
+      prefix: "ℹ️"
+      color: "blue"
+      bold: false
+
+  # Warning Display
+  warnings:
+    format:
+      prefix: "⚠️"
+      color: "yellow"
+      bold: true
+
+# Token Display Configuration
+tokens:
+  display:
+    enabled: true
+    position: "bottom"     # bottom, top, inline
+    format: "detailed"     # simple, detailed, minimal
+    
+  # Real-time token counting
+  real_time:
+    enabled: true
+    update_frequency: 100  # ms
+    show_estimated: true
+    
+  # Cost display
+  cost:
+    enabled: true
+    currency: "USD"
+    precision: 4
+    show_running_total: true
+    
+    # Cost warnings
+    warnings:
+      enabled: true
+      threshold: 1.0       # Warning at $1.00
+      high_threshold: 10.0 # High warning at $10.00
+
+# Performance Display
+performance:
+  show_timing: true
+  show_memory_usage: false
+  show_throughput: true
+  
+  # Performance warnings
+  warnings:
+    slow_response: 5000    # ms
+    high_memory: 1000      # MB
+    low_throughput: 10     # tokens/sec

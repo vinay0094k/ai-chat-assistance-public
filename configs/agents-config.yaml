@@ -1,0 +1,108 @@
+# Agent Configuration File
+# This file contains configurations for all AI agents
+
+architecture_aware:
+  enable_pattern_detection: true
+  enable_dependency_analysis: true
+  enable_architecture_validation: true
+  max_analysis_depth: 5
+  llm_model: "gpt-4"
+  max_tokens: 2048
+  temperature: 0.3
+
+code_intelligence:
+  enable_semantic_analysis: true
+  enable_code_understanding: true
+  enable_context_analysis: true
+  max_context_size: 4096
+  llm_model: "gpt-4"
+  max_tokens: 2048
+  temperature: 0.2
+
+coding:
+  enable_code_generation: true
+  enable_code_modification: true
+  enable_refactoring: true
+  enable_quality_check: true
+  llm_model: "gpt-4"
+  max_tokens: 4096
+  temperature: 0.3
+
+code_review:
+  enable_security_analysis: true
+  enable_performance_analysis: true
+  enable_best_practices_check: true
+  enable_style_check: true
+  min_quality_score: 0.7
+  llm_model: "gpt-4"
+  max_tokens: 2048
+  temperature: 0.2
+
+context_aware_search:
+  enable_semantic_search: true
+  enable_context_ranking: true
+  max_results: 50
+  similarity_threshold: 0.7
+  enable_caching: true
+
+debugging:
+  enable_bug_detection: true
+  enable_performance_analysis: true
+  enable_security_analysis: true
+  enable_fix_suggestions: true
+  llm_model: "gpt-4"
+  max_tokens: 2048
+  temperature: 0.2
+
+dependency_intelligence:
+  enable_vulnerability_scanning: true
+  enable_update_suggestions: true
+  enable_compatibility_check: true
+  max_dependency_depth: 10
+
+documentation:
+  enable_doc_generation: true
+  enable_doc_update: true
+  enable_api_doc_generation: true
+  enable_readme_generation: true
+  enable_example_generation: true
+  default_format: "markdown"
+  llm_model: "gpt-4"
+  max_tokens: 2048
+  temperature: 0.3
+
+performance_optimization:
+  enable_bottleneck_detection: true
+  enable_optimization_suggestions: true
+  enable_memory_analysis: true
+  enable_cpu_analysis: true
+  llm_model: "gpt-4"
+  max_tokens: 2048
+  temperature: 0.2
+
+project_analysis:
+  enable_structure_analysis: true
+  enable_metrics_calculation: true
+  enable_quality_assessment: true
+  max_analysis_depth: 10
+
+search:
+  max_results: 20
+  enable_fuzzy_search: true
+  enable_regex_search: true
+  similarity_threshold: 0.6
+
+testing:
+  enable_unit_test_generation: true
+  enable_integration_test_generation: true
+  enable_mock_generation: true
+  coverage_target: 80.0
+  llm_model: "gpt-4"
+  max_tokens: 2048
+  temperature: 0.3
+
+test_intelligence:
+  enable_test_analysis: true
+  enable_coverage_analysis: true
+  enable_test_optimization: true
+  enable_flaky_test_detection: true

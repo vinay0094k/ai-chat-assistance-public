@@ -1,0 +1,153 @@
+# CLI-specific configuration settings
+
+cli:
+  # Prompt Configuration
+  prompt: "useQ>"
+  prompt_color: "cyan"
+  
+  # Display Settings
+  show_line_numbers: true
+  line_number_width: 4
+  max_output_lines: 50
+  wrap_lines: true
+  
+  # Colors and Themes
+  colors:
+    enabled: true
+    theme: "default"
+    primary: "cyan"
+    secondary: "green"
+    warning: "yellow"
+    error: "red"
+    success: "green"
+    info: "blue"
+    debug: "magenta"
+    
+  # Syntax Highlighting
+  syntax_highlighting:
+    enabled: true
+    theme: "github"
+    languages:
+      go:
+        keywords: "magenta"
+        types: "cyan"
+        strings: "green"
+        comments: "gray"
+        functions: "blue"
+      python:
+        keywords: "magenta"
+        types: "cyan"
+        strings: "green"
+        comments: "gray"
+      javascript:
+        keywords: "magenta"
+        types: "cyan"
+        strings: "green"
+        comments: "gray"
+
+  # Progress Indicators
+  progress:
+    show_progress: true
+    progress_bar_width: 50
+    show_percentage: true
+    show_eta: true
+    animation_style: "blocks"  # blocks, dots, spinner
+    
+  # Auto-completion
+  completion:
+    enabled: true
+    max_suggestions: 10
+    fuzzy_matching: true
+    
+  # History
+  history:
+    enabled: true
+    max_entries: 1000
+    persist: true
+    file: "~/.ai-assistant/history"
+    
+  # Session Management
+  session:
+    auto_save: true
+    save_interval: "5m"
+    max_sessions: 100
+
+# Command Configuration
+commands:
+  # Default command behavior
+  defaults:
+    timeout: "30s"
+    verbose: false
+    format: "text"
+    
+  # Command aliases
+  aliases:
+    "?": "help"
+    "q": "quit"
+    "s": "status"
+    "c": "config"
+    "h": "help"
+    "v": "version"
+    
+  # Quick commands
+  quick_commands:
+    - name: "find"
+      description: "Quick code search"
+      pattern: "f <query>"
+      action: "search_code"
+      
+    - name: "generate"
+      description: "Quick code generation"
+      pattern: "g <description>"
+      action: "generate_code"
+      
+    - name: "explain"
+      description: "Quick code explanation"
+      pattern: "e <code>"
+      action: "explain_code"
+
+# Keyboard Shortcuts
+shortcuts:
+  enabled: true
+  bindings:
+    "Ctrl+C": "interrupt"
+    "Ctrl+D": "quit"
+    "Ctrl+L": "clear"
+    "Ctrl+R": "history_search"
+    "Tab": "autocomplete"
+    "Up": "history_previous"
+    "Down": "history_next"
+
+# Output Formatting
+output:
+  formats:
+    text:
+      enabled: true
+      default: true
+      
+    json:
+      enabled: true
+      pretty: true
+      indent: 2
+      
+    table:
+      enabled: true
+      borders: true
+      headers: true
+      
+    markdown:
+      enabled: true
+      code_blocks: true
+      
+  # Pagination
+  pagination:
+    enabled: true
+    page_size: 20
+    show_page_numbers: true
+
+# Development Settings
+development:
+  debug_mode: false
+  verbose_logging: false
+  profile_performance: false
+  enable_experimental: false

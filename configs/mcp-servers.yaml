@@ -1,0 +1,300 @@
+# MCP Server Configurations and Registry
+
+registry:
+  version: "1.0.0"
+  last_updated: "2024-12-07"
+  auto_update: true
+  update_check_interval: "24h"
+
+# Available MCP Servers
+servers:
+  filesystem:
+    name: "Filesystem Operations"
+    description: "File system read/write operations and file search"
+    version: "latest"
+    repository: "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem"
+    documentation: "https://docs.modelcontextprotocol.com/servers/filesystem"
+    
+    # Installation
+    install:
+      method: "npm"
+      command: "npm install -g @modelcontextprotocol/server-filesystem"
+      verify_command: "npx @modelcontextprotocol/server-filesystem --version"
+      
+    # Runtime configuration
+    runtime:
+      command: ["npx", "-y", "@modelcontextprotocol/server-filesystem"]
+      args: []
+      transport: "stdio"
+      timeout: 30
+      auto_restart: true
+      
+    # Capabilities
+    tools:
+      - name: "read_file"
+        description: "Read contents of a file"
+        
+      - name: "write_file"
+        description: "Write content to a file"
+        
+      - name: "create_directory"
+        description: "Create a new directory"
+        
+      - name: "list_directory"
+        description: "List directory contents"
+        
+      - name: "search_files"
+        description: "Search for files by name or content"
+        
+      - name: "delete_file"
+        description: "Delete a file"
+        
+      - name: "move_file"
+        description: "Move or rename a file"
+        
+    resources:
+      - pattern: "file://**"
+        description: "Local file system access"
+        
+    # Security and permissions
+    permissions:
+      read: true
+      write: true
+      execute: false
+      network: false
+
+  git:
+    name: "Git Operations"
+    description: "Git repository history and operations"
+    version: "latest"
+    repository: "https://github.com/modelcontextprotocol/servers/tree/main/src/git"
+    
+    install:
+      method: "npm"
+      command: "npm install -g @modelcontextprotocol/server-git"
+      
+    runtime:
+      command: ["npx", "-y", "@modelcontextprotocol/server-git"]
+      args: ["--repository", "."]
+      transport: "stdio"
+      
+    tools:
+      - name: "git_log"
+        description: "Get git commit history"
+        
+      - name: "git_diff"
+        description: "Show differences between commits"
+        
+      - name: "git_show"
+        description: "Show commit details"
+        
+      - name: "git_blame"
+        description: "Show line-by-line commit information"
+        
+      - name: "search_commits"
+        description: "Search commit messages and content"
+        
+      - name: "git_status"
+        description: "Show working directory status"
+        
+    resources:
+      - pattern: "git://**"
+        description: "Git repository access"
+
+  github:
+    name: "GitHub Integration"
+    description: "GitHub API for repositories, issues, and pull requests"
+    version: "latest"
+    repository: "https://github.com/modelcontextprotocol/servers/tree/main/src/github"
+    
+    install:
+      method: "npm"
+      command: "npm install -g @modelcontextprotocol/server-github"
+      
+    runtime:
+      command: ["npx", "-y", "@modelcontextprotocol/server-github"]
+      transport: "stdio"
+      environment:
+        required:
+          - GITHUB_PERSONAL_ACCESS_TOKEN
+        optional:
+          - GITHUB_API_URL
+          
+    tools:
+      - name: "create_issue"
+        description: "Create a new GitHub issue"
+        
+      - name: "search_repositories"
+        description: "Search GitHub repositories"
+        
+      - name: "get_issue"
+        description: "Get issue details"
+        
+      - name: "create_pull_request"
+        description: "Create a pull request"
+        
+      - name: "search_code"
+        description: "Search code in GitHub repositories"
+        
+      - name: "get_repository"
+        description: "Get repository information"
+        
+    resources:
+      - pattern: "github://**"
+        description: "GitHub API access"
+        
+    permissions:
+      read: true
+      write: true
+      network: true
+
+  sqlite:
+    name: "SQLite Operations"
+    description: "SQLite database operations and queries"
+    version: "latest"
+    repository: "https://github.com/modelcontextprotocol/servers/tree/main/src/sqlite"
+    
+    install:
+      method: "npm"
+      command: "npm install -g @modelcontextprotocol/server-sqlite"
+      
+    runtime:
+      command: ["npx", "-y", "@modelcontextprotocol/server-sqlite"]
+      args: ["--db-path", "./data/assistant.db"]
+      transport: "stdio"
+      
+    tools:
+      - name: "read_query"
+        description: "Execute SELECT queries"
+        
+      - name: "write_query"
+        description: "Execute INSERT/UPDATE/DELETE queries"
+        
+      - name: "create_table"
+        description: "Create database tables"
+        
+      - name: "describe_table"
+        description: "Get table schema information"
+        
+      - name: "list_tables"
+        description: "List all tables in database"
+        
+      - name: "execute_sql"
+        description: "Execute arbitrary SQL commands"
+        
+    resources:
+      - pattern: "sqlite://**"
+        description: "SQLite database access"
+
+  docker:
+    name: "Docker Operations"
+    description: "Docker container operations and management"
+    version: "latest"
+    repository: "https://github.com/modelcontextprotocol/servers/tree/main/src/docker"
+    
+    install:
+      method: "npm"
+      command: "npm install -g @modelcontextprotocol/server-docker"
+      
+    runtime:
+      command: ["npx", "-y", "@modelcontextprotocol/server-docker"]
+      transport: "stdio"
+      requirements:
+        - "Docker daemon must be running"
+        - "Docker CLI must be available"
+        
+    tools:
+      - name: "list_containers"
+        description: "List Docker containers"
+        
+      - name: "list_images"
+        description: "List Docker images"
+        
+      - name: "run_container"
+        description: "Run a new container"
+        
+      - name: "stop_container"
+        description: "Stop a running container"
+        
+      - name: "exec_command"
+        description: "Execute command in container"
+        
+      - name: "get_logs"
+        description: "Get container logs"
+        
+    permissions:
+      read: true
+      write: true
+      execute: true
+      network: true
+
+  brave_search:
+    name: "Brave Search"
+    description: "Web search using Brave Search API"
+    version: "latest"
+    repository: "https://github.com/modelcontextprotocol/servers/tree/main/src/brave-search"
+    
+    install:
+      method: "npm"
+      command: "npm install -g @modelcontextprotocol/server-brave-search"
+      
+    runtime:
+      command: ["npx", "-y", "@modelcontextprotocol/server-brave-search"]
+      transport: "stdio"
+      environment:
+        required:
+          - BRAVE_API_KEY
+          
+    tools:
+      - name: "brave_web_search"
+        description: "Search the web using Brave Search"
+        
+    permissions:
+      read: true
+      network: true
+
+# Default configurations for each environment
+environments:
+  development:
+    enabled_servers: ["filesystem", "git", "sqlite"]
+    auto_install: true
+    log_level: "debug"
+    
+  production:
+    enabled_servers: ["filesystem", "git", "github", "sqlite"]
+    auto_install: false
+    log_level: "info"
+    
+  testing:
+    enabled_servers: ["filesystem", "sqlite"]
+    auto_install: true
+    log_level: "warn"
+
+# Global MCP settings
+settings:
+  # Connection settings
+  connection:
+    timeout: 30
+    max_retries: 3
+    retry_delay: 1000
+    
+  # Health monitoring
+  health_check:
+    enabled: true
+    interval: 60
+    timeout: 10
+    
+  # Logging
+  logging:
+    enabled: true
+    level: "info"
+    file: "./logs/mcp.log"
+    max_size: "10MB"
+    max_files: 5
+    
+  # Performance
+  performance:
+    max_concurrent_requests: 10
+    request_timeout: 30
+    cache_responses: true
+    cache_ttl: 300

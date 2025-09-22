@@ -1,0 +1,1424 @@
+// internal/learning/pattern_mining.go
+package learning
+
+import (
+	"context"
+	"crypto/md5"
+	"database/sql"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"math"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+
+	_ "github.com/mattn/go-sqlite3"
+)
+
+type PatternMiner struct {
+	// Core components
+	db     *sql.DB
+	dbPath string
+
+	// Mining engines
+	structuralMiner *StructuralMiner
+	behavioralMiner *BehavioralMiner
+	semanticMiner   *SemanticMiner
+	temporalMiner   *TemporalMiner
+
+	// Pattern storage and analysis
+	patternRegistry  *PatternRegistry
+	similarityEngine *SimilarityEngine
+	evolutionTracker *EvolutionTracker
+
+	// Configuration
+	config *MiningConfig
+
+	// Mining state
+	discoveredPatterns map[string]*DiscoveredPattern
+	patternFrequency   map[string]int
+	patternEvolution   map[string]*PatternEvolution
+	miningMetrics      *MiningMetrics
+
+	// Concurrency and control
+	ctx     context.Context
+	cancel  context.CancelFunc
+	workers sync.WaitGroup
+	mu      sync.RWMutex
+}
+
+type MiningConfig struct {
+	// Pattern detection thresholds
+	MinFrequency         int     `json:"min_frequency"`
+	MinSimilarity        float64 `json:"min_similarity"`
+	MaxPatternComplexity int     `json:"max_pattern_complexity"`
+	MinPatternSize       int     `json:"min_pattern_size"`
+	MaxPatternSize       int     `json:"max_pattern_size"`
+
+	// Mining parameters
+	SlidingWindowSize  int     `json:"sliding_window_size"`
+	OverlapThreshold   float64 `json:"overlap_threshold"`
+	EvolutionThreshold float64 `json:"evolution_threshold"`
+	NoveltyThreshold   float64 `json:"novelty_threshold"`
+
+	// Performance settings
+	MaxConcurrentMiners int           `json:"max_concurrent_miners"`
+	MiningInterval      time.Duration `json:"mining_interval"`
+	IncrementalMining   bool          `json:"incremental_mining"`
+	DeepAnalysisEnabled bool          `json:"deep_analysis_enabled"`
+
+	// Pattern filtering
+	ExcludeTestFiles   bool     `json:"exclude_test_files"`
+	ExcludeVendor      bool     `json:"exclude_vendor"`
+	LanguageFilters    []string `json:"language_filters"`
+	FilePatternFilters []string `json:"file_pattern_filters"`
+
+	// Storage and retention
+	PatternRetentionDays int  `json:"pattern_retention_days"`
+	MaxStoredPatterns    int  `json:"max_stored_patterns"`
+	CompressOldPatterns  bool `json:"compress_old_patterns"`
+}
+
+type DiscoveredPattern struct {
+	ID          string          `json:"id"`
+	Name        string          `json:"name"`
+	Type        PatternType     `json:"type"`
+	Category    PatternCategory `json:"category"`
+	Description string          `json:"description"`
+
+	// Pattern structure
+	Structure PatternStructure `json:"structure"`
+	Signature string           `json:"signature"`
+	Hash      string           `json:"hash"`
+
+	// Occurrence data
+	Occurrences []PatternOccurrence `json:"occurrences"`
+	Frequency   int                 `json:"frequency"`
+	Coverage    float64             `json:"coverage"`
+
+	// Quality metrics
+	Confidence  float64 `json:"confidence"`
+	Complexity  int     `json:"complexity"`
+	Generality  float64 `json:"generality"`
+	Specificity float64 `json:"specificity"`
+	Novelty     float64 `json:"novelty"`
+
+	// Context and relationships
+	Context         PatternContext `json:"context"`
+	RelatedPatterns []string       `json:"related_patterns"`
+	SuperPatterns   []string       `json:"super_patterns"`
+	SubPatterns     []string       `json:"sub_patterns"`
+
+	// Evolution tracking
+	FirstSeen      time.Time           `json:"first_seen"`
+	LastSeen       time.Time           `json:"last_seen"`
+	Evolution      []EvolutionSnapshot `json:"evolution"`
+	TrendDirection TrendDirection      `json:"trend_direction"`
+
+	// Metadata
+	Language  string    `json:"language"`
+	Framework string    `json:"framework"`
+	Domain    string    `json:"domain"`
+	Tags      []string  `json:"tags"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type PatternType int
+
+const (
+	PatternStructural PatternType = iota
+	PatternBehavioral
+	PatternSemantic
+	PatternTemporal
+	PatternArchitectural
+	PatternDesign
+	PatternIdiom
+	PatternAntiPattern
+	PatternBestPractice
+	PatternCodeSmell
+)
+
+type PatternCategory int
+
+const (
+	CategoryCreational PatternCategory = iota
+	CategoryStructuralDesign
+	CategoryBehavioralDesign
+	CategoryConcurrency
+	CategoryErrorHandling
+	CategoryDataAccess
+	CategoryUserInterface
+	CategoryPerformance
+	CategorySecurity
+	CategoryTesting
+	CategoryUtility
+	CategoryDomainSpecific
+)
+
+type PatternStructure struct {
+	Type          string             `json:"type"`
+	Elements      []StructureElement `json:"elements"`
+	Relationships []Relationship     `json:"relationships"`
+	Constraints   []Constraint       `json:"constraints"`
+	Parameters    []Parameter        `json:"parameters"`
+	Variants      []StructureVariant `json:"variants"`
+}
+
+type StructureElement struct {
+	ID         string            `json:"id"`
+	Type       string            `json:"type"`
+	Name       string            `json:"name"`
+	Attributes map[string]string `json:"attributes"`
+	Optional   bool              `json:"optional"`
+	Repeatable bool              `json:"repeatable"`
+	Children   []string          `json:"children"`
+}
+
+type Relationship struct {
+	Type          string                 `json:"type"`
+	Source        string                 `json:"source"`
+	Target        string                 `json:"target"`
+	Strength      float64                `json:"strength"`
+	Bidirectional bool                   `json:"bidirectional"`
+	Properties    map[string]interface{} `json:"properties"`
+}
+
+type Constraint struct {
+	Type        string      `json:"type"`
+	Description string      `json:"description"`
+	Target      string      `json:"target"`
+	Value       interface{} `json:"value"`
+	Operator    string      `json:"operator"`
+	Optional    bool        `json:"optional"`
+}
+
+type Parameter struct {
+	Name         string      `json:"name"`
+	Type         string      `json:"type"`
+	DefaultValue interface{} `json:"default_value"`
+	Required     bool        `json:"required"`
+	Constraints  []string    `json:"constraints"`
+	Description  string      `json:"description"`
+}
+
+type StructureVariant struct {
+	Name          string         `json:"name"`
+	Description   string         `json:"description"`
+	Modifications []Modification `json:"modifications"`
+	Frequency     int            `json:"frequency"`
+}
+
+type Modification struct {
+	Type   string      `json:"type"`
+	Target string      `json:"target"`
+	Action string      `json:"action"`
+	Value  interface{} `json:"value"`
+}
+
+type PatternOccurrence struct {
+	ID         string                 `json:"id"`
+	File       string                 `json:"file"`
+	StartLine  int                    `json:"start_line"`
+	EndLine    int                    `json:"end_line"`
+	Code       string                 `json:"code"`
+	Context    string                 `json:"context"`
+	Confidence float64                `json:"confidence"`
+	Variant    string                 `json:"variant"`
+	Parameters map[string]interface{} `json:"parameters"`
+	Timestamp  time.Time              `json:"timestamp"`
+}
+
+type PatternContext struct {
+	Project  string `json:"project"`
+	Module   string `json:"module"`
+	Package  string `json:"package"`
+	Class    string `json:"class"`
+	Function string `json:"function"`
+
+	// Surrounding patterns
+	BeforePatterns []string `json:"before_patterns"`
+	AfterPatterns  []string `json:"after_patterns"`
+
+	// Environmental context
+	Dependencies []string `json:"dependencies"`
+	Framework    string   `json:"framework"`
+	Version      string   `json:"version"`
+
+	// Usage context
+	CallSites   []CallSite        `json:"call_sites"`
+	DataFlow    []DataFlowNode    `json:"data_flow"`
+	ControlFlow []ControlFlowNode `json:"control_flow"`
+}
+
+type CallSite struct {
+	File     string `json:"file"`
+	Line     int    `json:"line"`
+	Function string `json:"function"`
+	Context  string `json:"context"`
+}
+
+type DataFlowNode struct {
+	Type    string   `json:"type"`
+	Name    string   `json:"name"`
+	Inputs  []string `json:"inputs"`
+	Outputs []string `json:"outputs"`
+}
+
+type ControlFlowNode struct {
+	Type      string   `json:"type"`
+	Condition string   `json:"condition"`
+	Branches  []string `json:"branches"`
+}
+
+type PatternEvolution struct {
+	PatternID   string              `json:"pattern_id"`
+	Snapshots   []EvolutionSnapshot `json:"snapshots"`
+	Changes     []PatternChange     `json:"changes"`
+	Trend       TrendAnalysis       `json:"trend"`
+	Predictions []Prediction        `json:"predictions"`
+}
+
+type EvolutionSnapshot struct {
+	Timestamp   time.Time `json:"timestamp"`
+	Frequency   int       `json:"frequency"`
+	Complexity  int       `json:"complexity"`
+	Coverage    float64   `json:"coverage"`
+	Variants    int       `json:"variants"`
+	Confidence  float64   `json:"confidence"`
+	Occurrences []string  `json:"occurrences"`
+}
+
+type PatternChange struct {
+	Timestamp   time.Time  `json:"timestamp"`
+	Type        ChangeType `json:"type"`
+	Description string     `json:"description"`
+	Impact      float64    `json:"impact"`
+	Evidence    []string   `json:"evidence"`
+}
+
+type ChangeType int
+
+const (
+	ChangeEmergence ChangeType = iota
+	ChangeEvolution
+	ChangeDecline
+	ChangeExtinction
+	ChangeMutation
+	ChangeMigration
+	ChangeSpecialization
+	ChangeGeneralization
+)
+
+type TrendDirection int
+
+const (
+	TrendIncreasing TrendDirection = iota
+	TrendDecreasing
+	TrendStable
+	TrendOscillating
+	TrendEmerging
+	TrendDeclining
+)
+
+type TrendAnalysis struct {
+	Direction    TrendDirection `json:"direction"`
+	Strength     float64        `json:"strength"`
+	Velocity     float64        `json:"velocity"`
+	Acceleration float64        `json:"acceleration"`
+	Correlation  float64        `json:"correlation"`
+	Seasonality  bool           `json:"seasonality"`
+	Periodicity  time.Duration  `json:"periodicity"`
+}
+
+type Prediction struct {
+	Type        PredictionType `json:"type"`
+	Confidence  float64        `json:"confidence"`
+	TimeHorizon time.Duration  `json:"time_horizon"`
+	Description string         `json:"description"`
+	Probability float64        `json:"probability"`
+}
+
+type PredictionType int
+
+const (
+	PredictionGrowth PredictionType = iota
+	PredictionDecline
+	PredictionMutation
+	PredictionMerger
+	PredictionSplit
+	PredictionExtinction
+)
+
+// Mining engines
+
+type StructuralMiner struct {
+	astParser    *ASTParser
+	treeMatchers []TreeMatcher
+	config       *MiningConfig
+}
+
+type BehavioralMiner struct {
+	sequenceExtractor *SequenceExtractor
+	stateAnalyzer     *StateAnalyzer
+	config            *MiningConfig
+}
+
+type SemanticMiner struct {
+	tokenizer         *SemanticTokenizer
+	conceptExtractor  *ConceptExtractor
+	relationshipMiner *RelationshipMiner
+	config            *MiningConfig
+}
+
+type TemporalMiner struct {
+	changeTracker     *ChangeTracker
+	evolutionAnalyzer *EvolutionAnalyzer
+	trendDetector     *TrendDetector
+	config            *MiningConfig
+}
+
+// Support structures
+type PatternRegistry struct {
+	patterns   map[string]*DiscoveredPattern
+	index      *PatternIndex
+	statistics *RegistryStatistics
+	mu         sync.RWMutex
+}
+
+type SimilarityEngine struct {
+	comparators map[string]SimilarityComparator
+	indexer     *SimilarityIndexer
+	config      *MiningConfig
+}
+
+type EvolutionTracker struct {
+	evolutions     map[string]*PatternEvolution
+	changeDetector *ChangeDetector
+	predictor      *EvolutionPredictor
+	mu             sync.RWMutex
+}
+
+type MiningMetrics struct {
+	TotalPatterns      int                     `json:"total_patterns"`
+	PatternsByType     map[PatternType]int     `json:"patterns_by_type"`
+	PatternsByCategory map[PatternCategory]int `json:"patterns_by_category"`
+
+	// Mining performance
+	MiningDuration    time.Duration `json:"mining_duration"`
+	FilesProcessed    int           `json:"files_processed"`
+	PatternsPerSecond float64       `json:"patterns_per_second"`
+
+	// Quality metrics
+	AverageConfidence float64 `json:"average_confidence"`
+	NovelPatterns     int     `json:"novel_patterns"`
+	EvolvingPatterns  int     `json:"evolving_patterns"`
+
+	// Trend analysis
+	EmergingPatterns  int `json:"emerging_patterns"`
+	DecliningPatterns int `json:"declining_patterns"`
+	StablePatterns    int `json:"stable_patterns"`
+
+	LastUpdated time.Time `json:"last_updated"`
+}
+
+// NewPatternMiner creates a new pattern miner
+func NewPatternMiner(projectPath, dbPath string, config *MiningConfig) (*PatternMiner, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	if config == nil {
+		config = DefaultMiningConfig()
+	}
+
+	pm := &PatternMiner{
+		dbPath:             dbPath,
+		config:             config,
+		discoveredPatterns: make(map[string]*DiscoveredPattern),
+		patternFrequency:   make(map[string]int),
+		patternEvolution:   make(map[string]*PatternEvolution),
+		ctx:                ctx,
+		cancel:             cancel,
+	}
+
+	// Initialize database
+	if err := pm.initializeDatabase(); err != nil {
+		cancel()
+		return nil, fmt.Errorf("failed to initialize database: %w", err)
+	}
+
+	// Initialize mining engines
+	pm.structuralMiner = NewStructuralMiner(config)
+	pm.behavioralMiner = NewBehavioralMiner(config)
+	pm.semanticMiner = NewSemanticMiner(config)
+	pm.temporalMiner = NewTemporalMiner(config)
+
+	// Initialize support systems
+	pm.patternRegistry = NewPatternRegistry()
+	pm.similarityEngine = NewSimilarityEngine(config)
+	pm.evolutionTracker = NewEvolutionTracker()
+
+	// Load existing patterns
+	if err := pm.loadExistingPatterns(); err != nil {
+		cancel()
+		return nil, fmt.Errorf("failed to load existing patterns: %w", err)
+	}
+
+	// Start background workers
+	pm.startWorkers()
+
+	return pm, nil
+}
+
+// DefaultMiningConfig returns default mining configuration
+func DefaultMiningConfig() *MiningConfig {
+	return &MiningConfig{
+		MinFrequency:         3,
+		MinSimilarity:        0.8,
+		MaxPatternComplexity: 20,
+		MinPatternSize:       5,
+		MaxPatternSize:       100,
+		SlidingWindowSize:    10,
+		OverlapThreshold:     0.7,
+		EvolutionThreshold:   0.1,
+		NoveltyThreshold:     0.9,
+		MaxConcurrentMiners:  4,
+		MiningInterval:       1 * time.Hour,
+		IncrementalMining:    true,
+		DeepAnalysisEnabled:  true,
+		ExcludeTestFiles:     false,
+		ExcludeVendor:        true,
+		LanguageFilters:      []string{"go", "python", "javascript"},
+		PatternRetentionDays: 90,
+		MaxStoredPatterns:    10000,
+		CompressOldPatterns:  true,
+	}
+}
+
+// initializeDatabase initializes the pattern mining database
+func (pm *PatternMiner) initializeDatabase() error {
+	db, err := sql.Open("sqlite3", pm.dbPath+"?_journal_mode=WAL&_synchronous=NORMAL")
+	if err != nil {
+		return fmt.Errorf("failed to open database: %w", err)
+	}
+	pm.db = db
+
+	// Create tables
+	tables := []string{
+		`CREATE TABLE IF NOT EXISTS discovered_patterns (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			type INTEGER NOT NULL,
+			category INTEGER NOT NULL,
+			structure TEXT NOT NULL,
+			signature TEXT NOT NULL,
+			hash TEXT NOT NULL,
+			frequency INTEGER DEFAULT 1,
+			confidence REAL DEFAULT 0.0,
+			complexity INTEGER DEFAULT 0,
+			generality REAL DEFAULT 0.0,
+			specificity REAL DEFAULT 0.0,
+			novelty REAL DEFAULT 0.0,
+			language TEXT,
+			framework TEXT,
+			domain TEXT,
+			first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			INDEX(type), INDEX(category), INDEX(hash), INDEX(frequency)
+		)`,
+
+		`CREATE TABLE IF NOT EXISTS pattern_occurrences (
+			id TEXT PRIMARY KEY,
+			pattern_id TEXT NOT NULL,
+			file TEXT NOT NULL,
+			start_line INTEGER NOT NULL,
+			end_line INTEGER NOT NULL,
+			code TEXT NOT NULL,
+			context TEXT,
+			confidence REAL DEFAULT 0.0,
+			variant TEXT,
+			parameters TEXT,
+			timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY(pattern_id) REFERENCES discovered_patterns(id),
+			INDEX(pattern_id), INDEX(file), INDEX(timestamp)
+		)`,
+
+		`CREATE TABLE IF NOT EXISTS pattern_evolution (
+			id TEXT PRIMARY KEY,
+			pattern_id TEXT NOT NULL,
+			timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			frequency INTEGER DEFAULT 0,
+			complexity INTEGER DEFAULT 0,
+			coverage REAL DEFAULT 0.0,
+			variants INTEGER DEFAULT 0,
+			confidence REAL DEFAULT 0.0,
+			change_type INTEGER,
+			change_description TEXT,
+			FOREIGN KEY(pattern_id) REFERENCES discovered_patterns(id),
+			INDEX(pattern_id), INDEX(timestamp)
+		)`,
+
+		`CREATE TABLE IF NOT EXISTS pattern_relationships (
+			id TEXT PRIMARY KEY,
+			source_pattern_id TEXT NOT NULL,
+			target_pattern_id TEXT NOT NULL,
+			relationship_type TEXT NOT NULL,
+			strength REAL DEFAULT 0.0,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY(source_pattern_id) REFERENCES discovered_patterns(id),
+			FOREIGN KEY(target_pattern_id) REFERENCES discovered_patterns(id),
+			INDEX(source_pattern_id), INDEX(target_pattern_id)
+		)`,
+
+		`CREATE TABLE IF NOT EXISTS mining_sessions (
+			id TEXT PRIMARY KEY,
+			started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			completed_at TIMESTAMP,
+			files_processed INTEGER DEFAULT 0,
+			patterns_found INTEGER DEFAULT 0,
+			novel_patterns INTEGER DEFAULT 0,
+			status TEXT DEFAULT 'running'
+		)`,
+	}
+
+	for _, table := range tables {
+		if _, err := pm.db.Exec(table); err != nil {
+			return fmt.Errorf("failed to create table: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// MinePatterns starts the pattern mining process
+func (pm *PatternMiner) MinePatterns(projectPath string) (*MiningMetrics, error) {
+	startTime := time.Now()
+	sessionID := pm.generateSessionID()
+
+	// Create mining session
+	pm.createMiningSession(sessionID)
+
+	metrics := &MiningMetrics{
+		PatternsByType:     make(map[PatternType]int),
+		PatternsByCategory: make(map[PatternCategory]int),
+	}
+
+	// Walk through project files
+	err := filepath.Walk(projectPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if pm.shouldProcessFile(path, info) {
+			if err := pm.processFile(path); err != nil {
+				// Log error but continue processing
+				return nil
+			}
+			metrics.FilesProcessed++
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to mine patterns: %w", err)
+	}
+
+	// Analyze discovered patterns
+	pm.analyzePatterns()
+
+	// Detect pattern evolution
+	pm.detectEvolution()
+
+	// Update metrics
+	pm.calculateMiningMetrics(metrics)
+	metrics.MiningDuration = time.Since(startTime)
+	metrics.PatternsPerSecond = float64(metrics.TotalPatterns) / metrics.MiningDuration.Seconds()
+	metrics.LastUpdated = time.Now()
+
+	pm.miningMetrics = metrics
+
+	// Update mining session
+	pm.completeMiningSession(sessionID, metrics)
+
+	return metrics, nil
+}
+
+// shouldProcessFile determines if a file should be processed
+func (pm *PatternMiner) shouldProcessFile(path string, info os.FileInfo) bool {
+	if info.IsDir() {
+		return false
+	}
+
+	// Check file size
+	if info.Size() > 1024*1024 { // Skip files larger than 1MB
+		return false
+	}
+
+	// Exclude hidden files
+	if strings.HasPrefix(info.Name(), ".") {
+		return false
+	}
+
+	// Exclude test files if configured
+	if pm.config.ExcludeTestFiles {
+		if strings.Contains(path, "test") || strings.Contains(path, "_test") {
+			return false
+		}
+	}
+
+	// Exclude vendor if configured
+	if pm.config.ExcludeVendor {
+		if strings.Contains(path, "vendor") || strings.Contains(path, "node_modules") {
+			return false
+		}
+	}
+
+	// Check language filters
+	ext := filepath.Ext(path)
+	if len(pm.config.LanguageFilters) > 0 {
+		for _, lang := range pm.config.LanguageFilters {
+			if pm.matchesLanguage(ext, lang) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Check file pattern filters
+	for _, pattern := range pm.config.FilePatternFilters {
+		if matched, _ := filepath.Match(pattern, info.Name()); matched {
+			return false
+		}
+	}
+
+	return pm.isSupportedFile(ext)
+}
+
+// processFile processes a single file for patterns
+func (pm *PatternMiner) processFile(path string) error {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+
+	contentStr := string(content)
+	language := pm.detectLanguage(path)
+
+	// Mine structural patterns
+	structuralPatterns, err := pm.structuralMiner.Mine(path, contentStr, language)
+	if err == nil {
+		for _, pattern := range structuralPatterns {
+			pm.registerPattern(pattern)
+		}
+	}
+
+	// Mine behavioral patterns
+	behavioralPatterns, err := pm.behavioralMiner.Mine(path, contentStr, language)
+	if err == nil {
+		for _, pattern := range behavioralPatterns {
+			pm.registerPattern(pattern)
+		}
+	}
+
+	// Mine semantic patterns
+	semanticPatterns, err := pm.semanticMiner.Mine(path, contentStr, language)
+	if err == nil {
+		for _, pattern := range semanticPatterns {
+			pm.registerPattern(pattern)
+		}
+	}
+
+	return nil
+}
+
+// registerPattern registers a discovered pattern
+func (pm *PatternMiner) registerPattern(pattern *DiscoveredPattern) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	// Check if pattern already exists
+	if existing, exists := pm.discoveredPatterns[pattern.Hash]; exists {
+		// Update existing pattern
+		existing.Frequency++
+		existing.LastSeen = time.Now()
+		existing.Occurrences = append(existing.Occurrences, pattern.Occurrences...)
+
+		// Update confidence based on frequency
+		existing.Confidence = pm.calculateConfidence(existing)
+
+		pm.updatePatternInDB(existing)
+	} else {
+		// Add new pattern
+		pattern.FirstSeen = time.Now()
+		pattern.LastSeen = time.Now()
+		pattern.CreatedAt = time.Now()
+		pattern.Confidence = pm.calculateConfidence(pattern)
+
+		pm.discoveredPatterns[pattern.Hash] = pattern
+		pm.patternFrequency[pattern.Hash] = pattern.Frequency
+
+		pm.storePatternInDB(pattern)
+	}
+}
+
+// calculateConfidence calculates pattern confidence
+func (pm *PatternMiner) calculateConfidence(pattern *DiscoveredPattern) float64 {
+	// Base confidence on frequency
+	freqScore := math.Min(float64(pattern.Frequency)/10.0, 1.0)
+
+	// Adjust for complexity
+	complexityScore := 1.0 - (float64(pattern.Complexity) / 100.0)
+	if complexityScore < 0 {
+		complexityScore = 0
+	}
+
+	// Adjust for number of occurrences
+	occurrenceScore := math.Min(float64(len(pattern.Occurrences))/5.0, 1.0)
+
+	// Weighted average
+	confidence := (freqScore*0.4 + complexityScore*0.3 + occurrenceScore*0.3)
+
+	return math.Max(0.1, math.Min(1.0, confidence))
+}
+
+// Mining engine implementations
+
+// NewStructuralMiner creates a new structural miner
+func NewStructuralMiner(config *MiningConfig) *StructuralMiner {
+	return &StructuralMiner{
+		astParser:    NewASTParser(),
+		treeMatchers: createDefaultTreeMatchers(),
+		config:       config,
+	}
+}
+
+// Mine mines structural patterns from code
+func (sm *StructuralMiner) Mine(file, content, language string) ([]*DiscoveredPattern, error) {
+	var patterns []*DiscoveredPattern
+
+	switch language {
+	case "go":
+		patterns = append(patterns, sm.mineGoPatterns(file, content)...)
+	case "python":
+		patterns = append(patterns, sm.minePythonPatterns(file, content)...)
+	case "javascript":
+		patterns = append(patterns, sm.mineJavaScriptPatterns(file, content)...)
+	}
+
+	return patterns, nil
+}
+
+// mineGoPatterns mines Go-specific structural patterns
+func (sm *StructuralMiner) mineGoPatterns(file, content string) []*DiscoveredPattern {
+	var patterns []*DiscoveredPattern
+
+	fset := token.NewFileSet()
+	node, err := parser.ParseFile(fset, file, content, parser.ParseComments)
+	if err != nil {
+		return patterns
+	}
+
+	// Mine function patterns
+	patterns = append(patterns, sm.mineFunctionPatterns(file, node, fset)...)
+
+	// Mine struct patterns
+	patterns = append(patterns, sm.mineStructPatterns(file, node, fset)...)
+
+	// Mine interface patterns
+	patterns = append(patterns, sm.mineInterfacePatterns(file, node, fset)...)
+
+	// Mine control flow patterns
+	patterns = append(patterns, sm.mineControlFlowPatterns(file, node, fset)...)
+
+	return patterns
+}
+
+// mineFunctionPatterns mines function-related patterns
+func (sm *StructuralMiner) mineFunctionPatterns(file string, node *ast.File, fset *token.FileSet) []*DiscoveredPattern {
+	var patterns []*DiscoveredPattern
+
+	ast.Inspect(node, func(n ast.Node) bool {
+		if funcDecl, ok := n.(*ast.FuncDecl); ok {
+			pattern := sm.analyzeFunctionPattern(file, funcDecl, fset)
+			if pattern != nil {
+				patterns = append(patterns, pattern)
+			}
+		}
+		return true
+	})
+
+	return patterns
+}
+
+// analyzeFunctionPattern analyzes a function for patterns
+func (sm *StructuralMiner) analyzeFunctionPattern(file string, funcDecl *ast.FuncDecl, fset *token.FileSet) *DiscoveredPattern {
+	if funcDecl.Name == nil || funcDecl.Body == nil {
+		return nil
+	}
+
+	pos := fset.Position(funcDecl.Pos())
+	endPos := fset.Position(funcDecl.End())
+
+	// Analyze function structure
+	structure := sm.analyzeFunctionStructure(funcDecl)
+	signature := sm.generateFunctionSignature(funcDecl)
+	hash := sm.generatePatternHash(signature)
+
+	// Determine pattern type and category
+	patternType, category := sm.classifyFunctionPattern(funcDecl)
+
+	pattern := &DiscoveredPattern{
+		ID:         hash,
+		Name:       fmt.Sprintf("Function Pattern: %s", funcDecl.Name.Name),
+		Type:       patternType,
+		Category:   category,
+		Structure:  structure,
+		Signature:  signature,
+		Hash:       hash,
+		Frequency:  1,
+		Complexity: sm.calculateFunctionComplexity(funcDecl),
+		Language:   "go",
+		Occurrences: []PatternOccurrence{
+			{
+				ID:         sm.generateOccurrenceID(),
+				File:       file,
+				StartLine:  pos.Line,
+				EndLine:    endPos.Line,
+				Code:       sm.extractCode(funcDecl, fset),
+				Confidence: 0.8,
+				Timestamp:  time.Now(),
+			},
+		},
+	}
+
+	return pattern
+}
+
+// analyzeFunctionStructure analyzes function structure
+func (sm *StructuralMiner) analyzeFunctionStructure(funcDecl *ast.FuncDecl) PatternStructure {
+	structure := PatternStructure{
+		Type:     "function",
+		Elements: make([]StructureElement, 0),
+	}
+
+	// Analyze parameters
+	if funcDecl.Type.Params != nil {
+		for i, param := range funcDecl.Type.Params.List {
+			element := StructureElement{
+				ID:   fmt.Sprintf("param_%d", i),
+				Type: "parameter",
+				Name: sm.extractParamName(param),
+			}
+			structure.Elements = append(structure.Elements, element)
+		}
+	}
+
+	// Analyze return values
+	if funcDecl.Type.Results != nil {
+		for i, result := range funcDecl.Type.Results.List {
+			element := StructureElement{
+				ID:   fmt.Sprintf("return_%d", i),
+				Type: "return",
+				Name: sm.extractReturnType(result),
+			}
+			structure.Elements = append(structure.Elements, element)
+		}
+	}
+
+	// Analyze body structure
+	if funcDecl.Body != nil {
+		sm.analyzeBlockStructure(funcDecl.Body, &structure)
+	}
+
+	return structure
+}
+
+// generateFunctionSignature generates a function signature for pattern matching
+func (sm *StructuralMiner) generateFunctionSignature(funcDecl *ast.FuncDecl) string {
+	var sig strings.Builder
+
+	sig.WriteString("func")
+
+	// Add receiver if present
+	if funcDecl.Recv != nil {
+		sig.WriteString("(receiver)")
+	}
+
+	sig.WriteString(funcDecl.Name.Name)
+
+	// Add parameters
+	if funcDecl.Type.Params != nil {
+		sig.WriteString("(")
+		for i, param := range funcDecl.Type.Params.List {
+			if i > 0 {
+				sig.WriteString(",")
+			}
+			sig.WriteString(sm.extractParamType(param))
+		}
+		sig.WriteString(")")
+	}
+
+	// Add return types
+	if funcDecl.Type.Results != nil {
+		if len(funcDecl.Type.Results.List) == 1 {
+			sig.WriteString(" " + sm.extractReturnType(funcDecl.Type.Results.List[0]))
+		} else {
+			sig.WriteString("(")
+			for i, result := range funcDecl.Type.Results.List {
+				if i > 0 {
+					sig.WriteString(",")
+				}
+				sig.WriteString(sm.extractReturnType(result))
+			}
+			sig.WriteString(")")
+		}
+	}
+
+	return sig.String()
+}
+
+// classifyFunctionPattern classifies function pattern type and category
+func (sm *StructuralMiner) classifyFunctionPattern(funcDecl *ast.FuncDecl) (PatternType, PatternCategory) {
+	funcName := strings.ToLower(funcDecl.Name.Name)
+
+	// Check for common patterns
+	if strings.HasPrefix(funcName, "new") || strings.HasPrefix(funcName, "create") {
+		return PatternDesign, CategoryCreational
+	}
+
+	if strings.Contains(funcName, "handler") || strings.Contains(funcName, "handle") {
+		return PatternBehavioral, CategoryBehavioralDesign
+	}
+
+	if strings.Contains(funcName, "test") {
+		return PatternBehavioral, CategoryTesting
+	}
+
+	if strings.Contains(funcName, "validate") || strings.Contains(funcName, "check") {
+		return PatternBehavioral, CategoryErrorHandling
+	}
+
+	// Default classification
+	return PatternStructural, CategoryUtility
+}
+
+// calculateFunctionComplexity calculates cyclomatic complexity
+func (sm *StructuralMiner) calculateFunctionComplexity(funcDecl *ast.FuncDecl) int {
+	complexity := 1 // Base complexity
+
+	if funcDecl.Body != nil {
+		ast.Inspect(funcDecl.Body, func(n ast.Node) bool {
+			switch n.(type) {
+			case *ast.IfStmt, *ast.ForStmt, *ast.RangeStmt, *ast.SwitchStmt, *ast.TypeSwitchStmt:
+				complexity++
+			case *ast.CaseClause:
+				complexity++
+			}
+			return true
+		})
+	}
+
+	return complexity
+}
+
+// Additional mining implementations would continue here...
+// For brevity, I'll include the main structure and key methods
+
+// Helper methods
+
+func (sm *StructuralMiner) extractParamName(param *ast.Field) string {
+	if len(param.Names) > 0 {
+		return param.Names[0].Name
+	}
+	return "anonymous"
+}
+
+func (sm *StructuralMiner) extractParamType(param *ast.Field) string {
+	return "type" // Simplified - would extract actual type
+}
+
+func (sm *StructuralMiner) extractReturnType(result *ast.Field) string {
+	return "type" // Simplified - would extract actual type
+}
+
+func (sm *StructuralMiner) analyzeBlockStructure(block *ast.BlockStmt, structure *PatternStructure) {
+	// Analyze block statements
+	for _, stmt := range block.List {
+		sm.analyzeStatement(stmt, structure)
+	}
+}
+
+func (sm *StructuralMiner) analyzeStatement(stmt ast.Stmt, structure *PatternStructure) {
+	// Analyze different statement types
+	switch s := stmt.(type) {
+	case *ast.IfStmt:
+		element := StructureElement{
+			Type: "if_statement",
+			Name: "conditional",
+		}
+		structure.Elements = append(structure.Elements, element)
+	case *ast.ForStmt:
+		element := StructureElement{
+			Type: "for_loop",
+			Name: "iteration",
+		}
+		structure.Elements = append(structure.Elements, element)
+	case *ast.SwitchStmt:
+		element := StructureElement{
+			Type: "switch_statement",
+			Name: "multi_conditional",
+		}
+		structure.Elements = append(structure.Elements, element)
+	}
+}
+
+func (sm *StructuralMiner) extractCode(node ast.Node, fset *token.FileSet) string {
+	// Extract code snippet - simplified implementation
+	return "code_snippet"
+}
+
+func (sm *StructuralMiner) generateOccurrenceID() string {
+	return fmt.Sprintf("occ_%d", time.Now().UnixNano())
+}
+
+// Placeholder implementations for other mining engines
+func NewBehavioralMiner(config *MiningConfig) *BehavioralMiner {
+	return &BehavioralMiner{config: config}
+}
+
+func (bm *BehavioralMiner) Mine(file, content, language string) ([]*DiscoveredPattern, error) {
+	// Behavioral pattern mining implementation
+	return []*DiscoveredPattern{}, nil
+}
+
+func NewSemanticMiner(config *MiningConfig) *SemanticMiner {
+	return &SemanticMiner{config: config}
+}
+
+func (sm *SemanticMiner) Mine(file, content, language string) ([]*DiscoveredPattern, error) {
+	// Semantic pattern mining implementation
+	return []*DiscoveredPattern{}, nil
+}
+
+func NewTemporalMiner(config *MiningConfig) *TemporalMiner {
+	return &TemporalMiner{config: config}
+}
+
+// Support structure implementations
+func NewPatternRegistry() *PatternRegistry {
+	return &PatternRegistry{
+		patterns: make(map[string]*DiscoveredPattern),
+	}
+}
+
+func NewSimilarityEngine(config *MiningConfig) *SimilarityEngine {
+	return &SimilarityEngine{
+		comparators: make(map[string]SimilarityComparator),
+		config:      config,
+	}
+}
+
+func NewEvolutionTracker() *EvolutionTracker {
+	return &EvolutionTracker{
+		evolutions: make(map[string]*PatternEvolution),
+	}
+}
+
+// Utility methods
+func (pm *PatternMiner) generatePatternHash(signature string) string {
+	h := md5.New()
+	h.Write([]byte(signature))
+	return hex.EncodeToString(h.Sum(nil))[:16]
+}
+
+func (pm *PatternMiner) generateSessionID() string {
+	return fmt.Sprintf("mining_%d", time.Now().UnixNano())
+}
+
+func (pm *PatternMiner) matchesLanguage(ext, lang string) bool {
+	langMap := map[string][]string{
+		"go":         {".go"},
+		"python":     {".py", ".pyx"},
+		"javascript": {".js", ".jsx", ".ts", ".tsx"},
+		"java":       {".java"},
+		"cpp":        {".cpp", ".cc", ".cxx"},
+	}
+
+	if exts, exists := langMap[lang]; exists {
+		for _, e := range exts {
+			if ext == e {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func (pm *PatternMiner) isSupportedFile(ext string) bool {
+	supportedExts := []string{".go", ".py", ".js", ".ts", ".java", ".cpp", ".c", ".h"}
+	for _, supported := range supportedExts {
+		if ext == supported {
+			return true
+		}
+	}
+	return false
+}
+
+func (pm *PatternMiner) detectLanguage(path string) string {
+	ext := filepath.Ext(path)
+	switch ext {
+	case ".go":
+		return "go"
+	case ".py":
+		return "python"
+	case ".js", ".ts":
+		return "javascript"
+	case ".java":
+		return "java"
+	default:
+		return "unknown"
+	}
+}
+
+// Database operations
+func (pm *PatternMiner) createMiningSession(sessionID string) error {
+	query := `INSERT INTO mining_sessions (id, started_at) VALUES (?, ?)`
+	_, err := pm.db.Exec(query, sessionID, time.Now())
+	return err
+}
+
+func (pm *PatternMiner) completeMiningSession(sessionID string, metrics *MiningMetrics) error {
+	query := `UPDATE mining_sessions SET completed_at = ?, files_processed = ?, 
+	          patterns_found = ?, novel_patterns = ?, status = 'completed' WHERE id = ?`
+	_, err := pm.db.Exec(query, time.Now(), metrics.FilesProcessed,
+		metrics.TotalPatterns, metrics.NovelPatterns, sessionID)
+	return err
+}
+
+func (pm *PatternMiner) storePatternInDB(pattern *DiscoveredPattern) error {
+	structureJSON, _ := json.Marshal(pattern.Structure)
+
+	query := `INSERT INTO discovered_patterns 
+	          (id, name, type, category, structure, signature, hash, frequency,
+	           confidence, complexity, language, first_seen, last_seen, created_at)
+	          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+	_, err := pm.db.Exec(query, pattern.ID, pattern.Name, int(pattern.Type),
+		int(pattern.Category), string(structureJSON), pattern.Signature,
+		pattern.Hash, pattern.Frequency, pattern.Confidence, pattern.Complexity,
+		pattern.Language, pattern.FirstSeen, pattern.LastSeen, pattern.CreatedAt)
+
+	if err != nil {
+		return err
+	}
+
+	// Store occurrences
+	for _, occurrence := range pattern.Occurrences {
+		pm.storeOccurrenceInDB(pattern.ID, occurrence)
+	}
+
+	return nil
+}
+
+func (pm *PatternMiner) updatePatternInDB(pattern *DiscoveredPattern) error {
+	query := `UPDATE discovered_patterns SET frequency = ?, confidence = ?, 
+	          last_seen = ?, updated_at = ? WHERE id = ?`
+	_, err := pm.db.Exec(query, pattern.Frequency, pattern.Confidence,
+		pattern.LastSeen, time.Now(), pattern.ID)
+	return err
+}
+
+func (pm *PatternMiner) storeOccurrenceInDB(patternID string, occurrence PatternOccurrence) error {
+	parametersJSON, _ := json.Marshal(occurrence.Parameters)
+
+	query := `INSERT INTO pattern_occurrences 
+	          (id, pattern_id, file, start_line, end_line, code, context,
+	           confidence, variant, parameters, timestamp)
+	          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+	_, err := pm.db.Exec(query, occurrence.ID, patternID, occurrence.File,
+		occurrence.StartLine, occurrence.EndLine, occurrence.Code,
+		occurrence.Context, occurrence.Confidence, occurrence.Variant,
+		string(parametersJSON), occurrence.Timestamp)
+
+	return err
+}
+
+func (pm *PatternMiner) loadExistingPatterns() error {
+	query := `SELECT id, name, type, category, structure, signature, hash,
+	          frequency, confidence, complexity, language, first_seen, last_seen
+	          FROM discovered_patterns`
+
+	rows, err := pm.db.Query(query)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var pattern DiscoveredPattern
+		var structureJSON string
+
+		err := rows.Scan(&pattern.ID, &pattern.Name, (*int)(&pattern.Type),
+			(*int)(&pattern.Category), &structureJSON, &pattern.Signature,
+			&pattern.Hash, &pattern.Frequency, &pattern.Confidence,
+			&pattern.Complexity, &pattern.Language, &pattern.FirstSeen,
+			&pattern.LastSeen)
+
+		if err != nil {
+			continue
+		}
+
+		// Parse structure
+		json.Unmarshal([]byte(structureJSON), &pattern.Structure)
+
+		pm.discoveredPatterns[pattern.Hash] = &pattern
+		pm.patternFrequency[pattern.Hash] = pattern.Frequency
+	}
+
+	return nil
+}
+
+// Analysis methods
+func (pm *PatternMiner) analyzePatterns() {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	// Analyze pattern relationships
+	pm.analyzePatternRelationships()
+
+	// Detect pattern hierarchies
+	pm.detectPatternHierarchies()
+
+	// Calculate pattern metrics
+	pm.calculatePatternMetrics()
+}
+
+func (pm *PatternMiner) detectEvolution() {
+	// Detect pattern evolution
+	for hash, pattern := range pm.discoveredPatterns {
+		evolution := pm.analyzePatternEvolution(pattern)
+		pm.patternEvolution[hash] = evolution
+	}
+}
+
+func (pm *PatternMiner) calculateMiningMetrics(metrics *MiningMetrics) {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	metrics.TotalPatterns = len(pm.discoveredPatterns)
+
+	for _, pattern := range pm.discoveredPatterns {
+		metrics.PatternsByType[pattern.Type]++
+		metrics.PatternsByCategory[pattern.Category]++
+
+		// Calculate average confidence
+		metrics.AverageConfidence += pattern.Confidence
+
+		// Count novel patterns (high novelty)
+		if pattern.Novelty > pm.config.NoveltyThreshold {
+			metrics.NovelPatterns++
+		}
+	}
+
+	if metrics.TotalPatterns > 0 {
+		metrics.AverageConfidence /= float64(metrics.TotalPatterns)
+	}
+}
+
+// Additional placeholder implementations
+func (pm *PatternMiner) analyzePatternRelationships() {}
+func (pm *PatternMiner) detectPatternHierarchies()    {}
+func (pm *PatternMiner) calculatePatternMetrics()     {}
+func (pm *PatternMiner) analyzePatternEvolution(pattern *DiscoveredPattern) *PatternEvolution {
+	return &PatternEvolution{PatternID: pattern.ID}
+}
+func (pm *PatternMiner) startWorkers() {}
+
+// Placeholder types and interfaces
+type ASTParser struct{}
+type TreeMatcher interface{}
+type SequenceExtractor struct{}
+type StateAnalyzer struct{}
+type SemanticTokenizer struct{}
+type ConceptExtractor struct{}
+type RelationshipMiner struct{}
+type ChangeTracker struct{}
+type EvolutionAnalyzer struct{}
+type TrendDetector struct{}
+type PatternIndex struct{}
+type RegistryStatistics struct{}
+type SimilarityComparator interface{}
+type SimilarityIndexer struct{}
+type ChangeDetector struct{}
+type EvolutionPredictor struct{}
+
+func NewASTParser() *ASTParser                 { return &ASTParser{} }
+func createDefaultTreeMatchers() []TreeMatcher { return []TreeMatcher{} }
+
+// Public API methods
+
+// GetDiscoveredPatterns returns all discovered patterns
+func (pm *PatternMiner) GetDiscoveredPatterns() map[string]*DiscoveredPattern {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	patterns := make(map[string]*DiscoveredPattern)
+	for k, v := range pm.discoveredPatterns {
+		patterns[k] = v
+	}
+
+	return patterns
+}
+
+// GetPatternsByType returns patterns filtered by type
+func (pm *PatternMiner) GetPatternsByType(patternType PatternType) []*DiscoveredPattern {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	var patterns []*DiscoveredPattern
+	for _, pattern := range pm.discoveredPatterns {
+		if pattern.Type == patternType {
+			patterns = append(patterns, pattern)
+		}
+	}
+
+	return patterns
+}
+
+// GetPatternEvolution returns evolution data for a pattern
+func (pm *PatternMiner) GetPatternEvolution(patternHash string) (*PatternEvolution, bool) {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	evolution, exists := pm.patternEvolution[patternHash]
+	return evolution, exists
+}
+
+// GetMiningMetrics returns current mining metrics
+func (pm *PatternMiner) GetMiningMetrics() *MiningMetrics {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+	return pm.miningMetrics
+}
+
+// Close closes the pattern miner
+func (pm *PatternMiner) Close() error {
+	pm.cancel()
+	pm.workers.Wait()
+
+	if pm.db != nil {
+		return pm.db.Close()
+	}
+
+	return nil
+}

@@ -1,0 +1,47 @@
+search_components:
+  text_search_engine:
+    max_results: 1000
+    search_timeout: 5s
+    enable_fuzzy: true
+    fuzzy_threshold: 0.8
+  
+  query_analyzer:
+    enable_expansion: true
+    synonym_threshold: 0.7
+    enable_spell_check: true
+  
+  result_ranker:
+    relevance_weight: 0.5
+    freshness_weight: 0.3
+    popularity_weight: 0.2
+  
+  search_cache:
+    max_size: 1000
+    ttl: 15m
+    enable_lru: true
+
+context_aware_components:
+  context_analyzer:
+    max_context_depth: 10
+    context_radius: 20
+    similarity_threshold: 0.6
+  
+  relevance_calculator:
+    context_weight: 0.4
+    recency_weight: 0.3
+    frequency_weight: 0.3
+  
+  workspace_analyzer:
+    scan_depth: 5
+    analysis_timeout: 10s
+    enable_git_info: true
+  
+  session_tracker:
+    max_sessions: 100
+    session_timeout: 30m
+    enable_persist: true
+  
+  intent_predictor:
+    model_path: "./models/intent_model"
+    confidence_threshold: 0.7
+    enable_learning: true

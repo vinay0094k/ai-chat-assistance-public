@@ -1,0 +1,237 @@
+# AI Code Assistant Main Configuration
+# This file contains all system-wide settings
+
+system:
+  version: "1.0.0"
+  name: "AI Code Assistant"
+  session_timeout: "24h"
+  auto_save_config: true
+  data_directory: "./data"
+
+# AI Provider Configuration
+ai:
+  providers:
+    - name: "openai"
+      model: "gpt-4"
+      weight: 1.0
+      timeout: 30s
+      max_tokens: 4096
+      temperature: 0.7
+      stream: true
+      enabled: true
+      cost_per_1k_input: 0.03
+      cost_per_1k_output: 0.06
+      
+    - name: "gemini"
+      model: "gemini-pro"
+      weight: 0.8
+      timeout: 25s
+      max_tokens: 30720
+      temperature: 0.7
+      stream: true
+      enabled: true
+      cost_per_1k_input: 0.0005
+      cost_per_1k_output: 0.0015
+      
+    - name: "cohere"
+      model: "command"
+      weight: 0.7
+      timeout: 20s
+      max_tokens: 4096
+      temperature: 0.7
+      stream: false
+      enabled: true
+      cost_per_1k_input: 0.015
+      cost_per_1k_output: 0.015
+      
+    - name: "claude"
+      model: "claude-3-sonnet-20240229"
+      weight: 0.9
+      timeout: 35s
+      max_tokens: 100000
+      temperature: 0.7
+      stream: true
+      enabled: true
+      cost_per_1k_input: 0.008
+      cost_per_1k_output: 0.024
+
+  # AI Provider Fallback Configuration
+  fallback:
+    enabled: true
+    max_retries: 3
+    retry_delay: 2s
+    health_check_interval: 60s
+    circuit_breaker:
+      failure_threshold: 5
+      recovery_timeout: 300s
+
+# Code Indexing Configuration
+indexing:
+  # Language Support
+  languages: ["go"]  # Start with Go, expand later
+  file_extensions: [".go", ".mod", ".sum"]
+  ignore_patterns: 
+    - "vendor/"
+    - "node_modules/"
+    - ".git/"
+    - "*.test"
+    - "*.tmp"
+    - ".DS_Store"
+    - "*.log"
+  
+  # Performance Settings
+  chunk_size: 1000
+  overlap: 150
+  batch_size: 50
+  max_file_size: "10MB"
+  max_files: 100000
+  
+  # Real-time Settings
+  incremental: true
+  real_time: true
+  debounce_delay: 500ms
+  
+  # Parallel Processing
+  max_workers: 8
+  worker_queue_size: 1000
+
+# Vector Database Configuration
+vectordb:
+  provider: "qdrant"
+  host: "localhost"
+  port: 6333
+  collection_name: "code_chunks"
+  vector_size: 1536
+  distance: "cosine"
+  
+  # Performance Settings
+  batch_size: 100
+  max_connections: 10
+  timeout: 30s
+  
+  # Index Settings
+  m: 16
+  ef_construct: 200
+  ef: 128
+
+# Local Database Configuration
+database:
+  provider: "sqlite"
+  path: "./data/assistant.db"
+  max_connections: 10
+  connection_timeout: 30s
+  
+  # Performance Settings
+  journal_mode: "WAL"
+  synchronous: "NORMAL"
+  cache_size: "64MB"
+  
+  # Backup Settings
+  auto_backup: true
+  backup_interval: "1h"
+  max_backups: 24
+
+# MCP Server Configuration
+mcp:
+  enabled: true
+  timeout: 30s
+  max_retries: 3
+  
+  servers:
+    - name: "filesystem"
+      description: "File system operations"
+      command: ["npx", "-y", "@modelcontextprotocol/server-filesystem"]
+      args: []
+      transport: "stdio"
+      auto_install: true
+      enabled: true
+      
+    - name: "git"
+      description: "Git repository operations"
+      command: ["npx", "-y", "@modelcontextprotocol/server-git"]
+      args: ["--repository", "."]
+      transport: "stdio"
+      auto_install: true
+      enabled: true
+      
+    - name: "github"
+      description: "GitHub API integration"
+      command: ["npx", "-y", "@modelcontextprotocol/server-github"]
+      args: []
+      transport: "stdio"
+      auto_install: true
+      enabled: false
+      env:
+        GITHUB_PERSONAL_ACCESS_TOKEN: "${GITHUB_TOKEN}"
+        
+    - name: "sqlite"
+      description: "SQLite database operations"
+      command: ["npx", "-y", "@modelcontextprotocol/server-sqlite"]
+      args: ["--db-path", "./data/assistant.db"]
+      transport: "stdio"
+      auto_install: true
+      enabled: true
+      
+    - name: "docker"
+      description: "Docker container management"
+      command: ["npx", "-y", "@modelcontextprotocol/server-docker"]
+      args: []
+      transport: "stdio"
+      auto_install: false
+      enabled: false
+
+# Search Configuration
+search:
+  max_results: 20
+  min_confidence: 0.5
+  
+  # Search weights
+  semantic_weight: 0.6
+  keyword_weight: 0.2
+  graph_weight: 0.2
+  
+  # Context settings
+  context_expansion: 3
+  enable_fuzzy: true
+  fuzzy_threshold: 0.8
+
+# Learning System Configuration
+learning:
+  enabled: true
+  min_pattern_frequency: 3
+  feedback_weight: 0.3
+  accuracy_tracking_window: "7d"
+  
+  # Pattern Learning
+  auto_apply_patterns: true
+  confidence_threshold: 0.8
+  max_patterns: 10000
+  
+  # Model Adaptation
+  provider_selection_learning: true
+  context_optimization: true
+
+# Performance Monitoring
+performance:
+  enable_metrics: true
+  metrics_interval: "60s"
+  
+  # Memory Management
+  max_memory: "2GB"
+  gc_threshold: "1GB"
+  
+  # Cache Settings
+  enable_cache: true
+  cache_size: "512MB"
+  cache_ttl: "1h"
+
+# Security Settings
+security:
+  enable_api_key_validation: true
+  log_sensitive_data: false
+  encrypt_stored_data: false
+  
+  # Rate Limiting
+  enable_rate_limiting: true
+  requests_per_minute: 100
+  burst_size: 20
